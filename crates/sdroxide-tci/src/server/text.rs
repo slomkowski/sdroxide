@@ -196,7 +196,9 @@ pub(crate) fn diff_lines(prev: Option<&TciStateSnapshot>, next: &TciStateSnapsho
         out.push(p::if_offset(RX, 1, next.vfo_b_hz - next.center_hz));
     }
     if prev.is_none_or(|p| p.mode != next.mode) {
-        out.push(p::modulation(RX, p::mode_to_tci(next.mode)));
+        // Upper case, as ExpertSDR sends it: QLog matches "USB"/"LSB" exactly
+        // and otherwise logs SSB without the sideband.
+        out.push(p::modulation(RX, &p::mode_to_tci(next.mode).to_uppercase()));
     }
     if changed(|s| s.ptt) {
         out.push(p::trx(RX, next.ptt, false));
@@ -234,7 +236,7 @@ pub(crate) fn connect_burst(device_name: &str, state: &TciStateSnapshot) -> Vec<
         p::channels_count(2),
         p::vfo_limits(state.vfo_lo_hz, state.vfo_hi_hz),
         p::if_limits(-state.if_span_hz, state.if_span_hz),
-        p::modulations_list(&p::MODULATIONS),
+        p::modulations_list(&p::MODULATIONS.map(str::to_uppercase).each_ref().map(String::as_str)),
     ];
     // An audio-mode source (a CAT rig on a sound card) has no wideband IQ, so
     // the IQ stream is not advertised at all rather than advertised and silent.
@@ -354,6 +356,10 @@ mod tests {
         b.vfo_a_hz = 14_075_000.0;
         let lines = diff_lines(Some(&a), &b);
         assert_eq!(lines, vec!["vfo:0,0,14075000;", "if:0,0,-25000;"]);
+
+        let mut m = a.clone();
+        m.mode = Mode::Lsb;
+        assert_eq!(diff_lines(Some(&a), &m), vec!["modulation:0,LSB;"]);
 
         let mut c = a.clone();
         c.ptt = true;
