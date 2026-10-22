@@ -12349,9 +12349,12 @@ impl Engine {
         // Under a satellite lock with an uplink the transmitter is not on VFO B
         // but on the transponder's uplink for the dial. Report that as a split
         // TX VFO, so a logger following us (QLog) logs both directions.
+        // Without split, VFO B is reported as VFO A: QLog takes VFO B as the
+        // TX frequency whether split is on or not.
         let (vfo_b_hz, split) = match self.sat_lock.as_ref().and_then(|l| l.cfg.uplink) {
             Some(_) => (self.tx_target_hz(), true),
-            None => (self.state.vfo_b_hz, self.state.split),
+            None if self.state.split => (self.state.vfo_b_hz, true),
+            None => (self.state.vfo_a_hz, false),
         };
         TciStateSnapshot {
             vfo_a_hz: self.state.vfo_a_hz,
