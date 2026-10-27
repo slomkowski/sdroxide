@@ -180,19 +180,25 @@ pub(crate) fn diff_lines(prev: Option<&TciStateSnapshot>, next: &TciStateSnapsho
     if prev.is_none_or(|p| p.center_hz != next.center_hz) {
         out.push(p::dds(RX, next.center_hz));
     }
+    // Split goes ahead of the VFOs, and switching it on repeats VFO B: a client
+    // such as QLog only takes VFO B as the TX frequency once it knows split is
+    // on, and asks for it with a query we don't answer.
+    let split_changed = changed(|s| s.split);
+    if split_changed {
+        out.push(p::split_enable(RX, next.split));
+    }
     if prev.is_none_or(|p| p.vfo_a_hz != next.vfo_a_hz) {
         out.push(p::vfo(RX, 0, next.vfo_a_hz));
         out.push(p::if_offset(RX, 0, next.vfo_a_hz - next.center_hz));
     }
-    if prev.is_none_or(|p| p.vfo_b_hz != next.vfo_b_hz) {
+    if prev.is_none_or(|p| p.vfo_b_hz != next.vfo_b_hz) || (split_changed && next.split) {
         out.push(p::vfo(RX, 1, next.vfo_b_hz));
         out.push(p::if_offset(RX, 1, next.vfo_b_hz - next.center_hz));
     }
     if prev.is_none_or(|p| p.mode != next.mode) {
-        out.push(p::modulation(RX, p::mode_to_tci(next.mode)));
-    }
-    if changed(|s| s.split) {
-        out.push(p::split_enable(RX, next.split));
+        // Upper case, as ExpertSDR sends it: QLog matches "USB"/"LSB" exactly
+        // and otherwise logs SSB without the sideband.
+        out.push(p::modulation(RX, &p::mode_to_tci(next.mode).to_uppercase()));
     }
     if changed(|s| s.ptt) {
         out.push(p::trx(RX, next.ptt, false));
@@ -230,7 +236,7 @@ pub(crate) fn connect_burst(device_name: &str, state: &TciStateSnapshot) -> Vec<
         p::channels_count(2),
         p::vfo_limits(state.vfo_lo_hz, state.vfo_hi_hz),
         p::if_limits(-state.if_span_hz, state.if_span_hz),
-        p::modulations_list(&p::MODULATIONS),
+        p::modulations_list(&p::MODULATIONS.map(str::to_uppercase).each_ref().map(String::as_str)),
     ];
     // An audio-mode source (a CAT rig on a sound card) has no wideband IQ, so
     // the IQ stream is not advertised at all rather than advertised and silent.
@@ -351,12 +357,32 @@ mod tests {
         let lines = diff_lines(Some(&a), &b);
         assert_eq!(lines, vec!["vfo:0,0,14075000;", "if:0,0,-25000;"]);
 
+        let mut m = a.clone();
+        m.mode = Mode::Lsb;
+        assert_eq!(diff_lines(Some(&a), &m), vec!["modulation:0,LSB;"]);
+
         let mut c = a.clone();
         c.ptt = true;
         assert_eq!(diff_lines(Some(&a), &c), vec!["trx:0,true;"]);
 
         // No previous state = the whole picture.
         assert!(diff_lines(None, &a).len() > 5);
+    }
+
+    /// QLog takes VFO B as the TX frequency only after it has seen split on.
+    #[test]
+    fn split_on_comes_ahead_of_vfo_b_and_repeats_it() {
+        let a = snap();
+        let mut b = a.clone();
+        b.split = true;
+        let lines = diff_lines(Some(&a), &b);
+        assert_eq!(lines[0], "split_enable:0,true;");
+        assert!(lines[1].starts_with("vfo:0,1,"));
+
+        let all = diff_lines(None, &b);
+        let split = all.iter().position(|l| l.starts_with("split_enable:")).unwrap();
+        let vfo_b = all.iter().position(|l| l.starts_with("vfo:0,1,")).unwrap();
+        assert!(split < vfo_b);
     }
 
     #[test]
