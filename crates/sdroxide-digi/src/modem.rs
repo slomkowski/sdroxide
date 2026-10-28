@@ -736,6 +736,17 @@ fn pack_message(text: &str) -> Option<([u8; 77], String)> {
         }
     }
 
+    // 3a. The same, with a portable or rover station: "XA4DFR/P SP3OHM JO82".
+    //     The callsign field cannot hold the suffix, but the layout has a flag
+    //     beside each call for it. Without this rung such a call counts as
+    //     standard, so it is not hashed either, and the message went out as
+    //     13 characters of free text: "XA4DFR/P SP3O".
+    if toks.len() <= 3
+        && let Some(m) = pack77_suffixed(c1, c2, payload)
+    {
+        return Some((m, join3(c1, c2, payload)));
+    }
+
     // 3b. One compound / non-standard callsign addressed with a grid or a
     //     signal report — neither of which the layout below has anywhere to
     //     put. The standard layout does, so long as that callsign travels as
@@ -779,6 +790,42 @@ fn pack_message(text: &str) -> Option<([u8; 77], String)> {
     let free: String = text.chars().take(13).collect();
     let m = wsjt77::pack77_free_text(free.trim_end())?;
     Some((m, free.trim_end().to_string()))
+}
+
+/// The everyday layout for a callsign with a `/R` or `/P` suffix, as WSJT-X's
+/// `pack77_1` writes it: the bare callsigns in the 28-bit fields, a flag beside
+/// each one that carried the suffix (bits 28 and 57), and which suffix in `i3`
+/// — 1 for `/R`, 2 for `/P`. mfsk-core reads both back (`unpack77` appends the
+/// suffix to a flagged call), but its `pack77` only writes `i3 = 1` with both
+/// flags clear.
+///
+/// `None` when neither call has a suffix (the plain packer has it), when the
+/// two carry different ones (one `i3` cannot say both), or when a bare call or
+/// the payload does not pack.
+fn pack77_suffixed(c1: &str, c2: &str, payload: &str) -> Option<[u8; 77]> {
+    // The bare callsign and the `i3` its suffix asks for.
+    fn split(call: &str) -> (&str, Option<u8>) {
+        if let Some(bare) = call.strip_suffix("/R") {
+            (bare, Some(1))
+        } else if let Some(bare) = call.strip_suffix("/P") {
+            (bare, Some(2))
+        } else {
+            (call, None)
+        }
+    }
+    let ((b1, s1), (b2, s2)) = (split(c1), split(c2));
+    let i3 = match (s1, s2) {
+        (None, None) => return None,
+        (Some(a), Some(b)) if a != b => return None,
+        (Some(a), _) | (_, Some(a)) => a,
+    };
+    let mut msg = wsjt77::pack77(b1, b2, payload)?;
+    msg[28] = u8::from(s1.is_some());
+    msg[57] = u8::from(s2.is_some());
+    for i in 0..3 {
+        msg[74 + i] = (i3 >> (2 - i)) & 1;
+    }
+    Some(msg)
 }
 
 /// Where `unpack28` stops reading a 28-bit callsign field as one of the fixed
@@ -1587,6 +1634,53 @@ mod eu_vhf_tests {
 
     /// And a decode of one is addressed, with the six-character locator read
     /// out of it — the whole reason the layout exists.
+    /// A portable station addressed with our grid goes out whole, as WSJT-X
+    /// sends it (`i3 = 2`, the first call flagged), not as 13 characters of
+    /// free text ("XA4DFR/P SP3O").
+    #[test]
+    fn a_portable_call_with_a_grid_is_sent_whole() {
+        let (bits, sent) = pack_message("XA4DFR/P SP3OHM JO82").expect("packs");
+        assert_eq!(sent, "XA4DFR/P SP3OHM JO82");
+        assert_eq!(&bits[74..77], &[0, 1, 0]);
+        assert_eq!(wsjt77::unpack77(&bits).as_deref(), Some("XA4DFR/P SP3OHM JO82"));
+        let d = build_decode(
+            &bits,
+            -5.0,
+            0.2,
+            1200.0,
+            0,
+            &CallsignHashTable::new(),
+            &eu_vhf::Hashes::default(),
+        )
+        .expect("decodes");
+        assert_eq!(d.to.as_deref(), Some("XA4DFR/P"));
+        assert_eq!(d.from.as_deref(), Some("SP3OHM"));
+        assert!(!d.free_text);
+    }
+
+    /// The other suffixes and positions: a report from a /P station, a rover's
+    /// CQ, and a /R call answered with an R-report.
+    #[test]
+    fn suffixed_calls_round_trip() {
+        for text in [
+            "SP3OHM XA4DFR/P R-05",
+            "CQ G4ABC/R IO91",
+            "G4ABC/R SP3OHM RR73",
+            "G4ABC/P PA9XYZ/P 73",
+        ] {
+            let (bits, sent) = pack_message(text).expect("packs");
+            assert_eq!(sent, text);
+            assert_eq!(wsjt77::unpack77(&bits).as_deref(), Some(text), "{text}");
+        }
+    }
+
+    /// One `i3` cannot carry both suffixes, so that pair is not this layout's.
+    #[test]
+    fn mixed_suffixes_are_not_packed_as_one_message() {
+        assert!(pack77_suffixed("G4ABC/R", "PA9XYZ/P", "JO22").is_none());
+        assert!(pack77_suffixed("G4ABC", "PA9XYZ", "JO22").is_none());
+    }
+
     #[test]
     fn a_contest_decode_is_addressed_and_carries_its_locator() {
         let mut eu = eu_vhf::Hashes::default();
