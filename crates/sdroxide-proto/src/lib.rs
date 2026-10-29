@@ -1609,7 +1609,12 @@ use sdroxide_types::{
 /// so a v185 peer reads the extra bytes as the start of the next field and
 /// fails to decode every digital status, the same break as every appended field
 /// before it.
-pub const PROTO_VERSION: u16 = 186;
+///
+/// v187: a full-duplex PlutoSDR can mute the speakers through an over.
+/// [`sdroxide_types::PlutoConfig`] gains `mute_on_tx` after `full_duplex`, so
+/// a v186 peer reads the radio configuration, which rides both a command and
+/// an event, out of step.
+pub const PROTO_VERSION: u16 = 187;
 const VERSION_BYTE: u8 = 0x12;
 
 #[derive(Debug, thiserror::Error)]
