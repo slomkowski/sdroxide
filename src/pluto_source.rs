@@ -75,6 +75,8 @@ pub struct PlutoSource {
     /// gain so a panel can tell that the gain register is the AD9361's while
     /// an attack mode runs, and a gain slider moves nothing (issue #417).
     agc: PlutoAgc,
+    /// [`PlutoConfig::mute_on_tx`], as this radio was opened with it.
+    mute_on_tx: bool,
 }
 
 impl PlutoSource {
@@ -121,6 +123,7 @@ impl PlutoSource {
             rx: Some(rx),
             rig: Some(rig),
             agc: cfg.agc,
+            mute_on_tx: cfg.mute_on_tx,
         })
     }
 
@@ -222,6 +225,14 @@ impl IqSource for PlutoSource {
     /// heard on the air, where an empty receive block is not heard at all.
     fn read_available(&mut self, buf: &mut [Complex32]) -> Result<usize> {
         self.take(buf, false)
+    }
+
+    /// Asked of the connection rather than of `cfg`, for the reason
+    /// [`PlutoSource::open`] gives: a radio that attached to a sibling's
+    /// half-duplex connection is not read during an over, whatever it asked
+    /// for, and has nothing to mute.
+    fn mutes_rx_audio_on_tx(&self) -> bool {
+        self.mute_on_tx && self.full_duplex()
     }
 
     fn describe(&self) -> String {

@@ -5389,6 +5389,16 @@ pub struct PlutoConfig {
     /// and what goes on the air is chopped.
     #[serde(default)]
     pub full_duplex: bool,
+    /// Silence the speakers for the length of an over that [`Self::full_duplex`]
+    /// keeps receiving through. Only the speakers: the panadapter, the
+    /// waterfall and the digital-mode decoders still get the receiver, so a
+    /// QO-100 station still sees its own downlink and decodes its own FT8.
+    ///
+    /// Off by default, because hearing the downlink through the over is what
+    /// full duplex is usually turned on for. Nothing to do in half duplex,
+    /// where receive is not read during an over at all.
+    #[serde(default)]
+    pub mute_on_tx: bool,
     /// Which duplex to put the AD9361's enable state machine in. FDD is how a
     /// Pluto boots and what every earlier version of this backend left alone;
     /// TDD is what [`Self::ptt_gpo`] needs, and it rules out
@@ -5421,6 +5431,7 @@ impl Default for PlutoConfig {
             buffer_samples: 32768,
             rx: 0,
             full_duplex: false,
+            mute_on_tx: false,
             duplex: PlutoDuplex::default(),
             ptt_gpo: PlutoPtt::default(),
         }

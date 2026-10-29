@@ -9681,6 +9681,13 @@ Three things to know before you switch it on:
   deliberately reconfigured — or on one you have put there yourself with the
   **PTT pins** setting below, which turns this checkbox off and says so.
 
+**Mute on transmit** — under *Full duplex*, off by default and only available
+with it. It silences the speakers for the length of an over and nothing else:
+the panadapter, the waterfall and the digital-mode decoders keep the receiver,
+so you still see your own downlink and decode your own FT8 while you do not
+hear it. For a station that watches its signal come back rather than listens
+to it. Takes effect on Apply.
+
 **Keying an external amplifier, LNA or T/R switch (the GPO pins).** A bare Pluto
 puts out a few milliwatts, so most of them end up in front of an amplifier —
 and an amplifier needs to know when you are transmitting. You can wire a serial

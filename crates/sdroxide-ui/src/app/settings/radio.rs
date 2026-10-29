@@ -3402,6 +3402,28 @@ pub(in crate::app) fn settings_pluto_tab(
         );
         ui.end_row();
 
+        // Under Full duplex because it is a question only that one raises: in
+        // half duplex receive is not read during an over, so it is quiet
+        // already.
+        ui.label("Mute on transmit");
+        ui.add_enabled_ui(cfg.pluto.full_duplex, |ui| {
+            crate::chrome::checkbox(
+                ui,
+                &mut cfg.pluto.mute_on_tx,
+                "Silence the speakers during an over",
+            )
+            .on_hover_text(
+                "With Full duplex on, the receiver keeps playing through your own \
+                     transmission. Tick this to silence the speakers for the length of an \
+                     over while everything else keeps receiving: the panadapter, the \
+                     waterfall and the digital-mode decoders still get the downlink, so \
+                     you still see your own signal and decode your own FT8.\n\nOnly \
+                     available with Full duplex: without it receive stops during an over \
+                     and there is nothing to silence.\n\nTakes effect on Apply.",
+            );
+        });
+        ui.end_row();
+
         // Below Full duplex because the two argue: TDD is one direction at a
         // time in the silicon, so it settles the question the checkbox above
         // asks about the link.
